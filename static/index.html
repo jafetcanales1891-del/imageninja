@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1020">
+<meta name="description" content="Busca, selecciona y descarga imágenes de páginas web.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<title>ImageNinja</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#141b2d;--muted:#aab5ce;--text:#f5f7ff;--accent:#7197ff;--line:#2b3650}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#182747 0,var(--bg) 42%);color:var(--text);font:16px system-ui,-apple-system,sans-serif;min-height:100vh}
+main{max-width:980px;margin:auto;padding:22px 16px 48px}.brand{display:flex;align-items:center;gap:12px}.logo{width:46px;height:46px;border-radius:14px;background:#253d76;display:grid;place-items:center;font-size:25px}
+h1{font-size:1.45rem;margin:0}.subtitle{color:var(--muted);font-size:.92rem;margin:.2rem 0 1.2rem}
+.panel{background:rgba(20,27,45,.94);border:1px solid var(--line);border-radius:20px;padding:16px;margin:14px 0}
+label{display:block;font-weight:650;margin-bottom:8px}.urlrow{display:flex;gap:8px}input[type=url]{flex:1;min-width:0;background:#0b1222;border:1px solid #3a4868;border-radius:12px;padding:14px;color:white;font-size:16px}
+button,.filelabel{border:0;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:700;cursor:pointer;background:var(--accent);color:#07122b}button.secondary{background:#27334d;color:#f4f6ff;border:1px solid #3a4868}button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hint,.status{color:var(--muted);font-size:.88rem;line-height:1.5}.status{margin-top:12px;white-space:pre-wrap}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;margin-top:14px}
+.card{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:14px;background:#0d1424}.thumb{height:145px;display:grid;place-items:center;background:#070c16}.thumb img{width:100%;height:100%;object-fit:contain}.meta{padding:10px}.meta p{font-size:.78rem;color:var(--muted);overflow-wrap:anywhere;margin:0 0 8px}.selectrow{display:flex;align-items:center;gap:7px;font-size:.9rem}.selectrow input{width:18px;height:18px;accent-color:var(--accent)}
+.small{font-size:.78rem;color:var(--muted)}.warning{border-left:3px solid #e4b65e;padding-left:11px}.empty{text-align:center;padding:26px 8px;color:var(--muted)}
+@media(max-width:560px){.urlrow{flex-direction:column}.urlrow button{width:100%}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.thumb{height:135px}}
+</style>
+</head>
+<body>
+<main>
+  <header class="brand"><div class="logo">▧</div><div><h1>ImageNinja</h1><div class="small">Descargador de imágenes · Android</div></div></header>
+  <p class="subtitle">Pega una página, revisa las imágenes y descarga las que necesites.</p>
+  <section class="panel">
+    <label for="pageUrl">Enlace de la página</label>
+    <div class="urlrow"><input id="pageUrl" type="url" inputmode="url" placeholder="https://ejemplo.com/galeria" autocomplete="url"><button id="scanBtn">Buscar imágenes</button></div>
+    <div class="actions">
+      <button id="allBtn" class="secondary" disabled>Descargar todas</button>
+      <button id="selectedBtn" disabled>Descargar seleccionadas</button>
+      <button id="clearBtn" class="secondary" disabled>Limpiar selección</button>
+    </div>
+    <p class="hint">La descarga de varias imágenes genera un ZIP. Si eliges una sola, se descarga como archivo individual.</p>
+    <div id="status" class="status" role="status" aria-live="polite">Listo para buscar.</div>
+  </section>
+  <section class="panel">
+    <div class="bar"><div><strong>Resultados</strong> <span id="count" class="small">· 0 imágenes</span></div><label class="selectrow"><input type="checkbox" id="selectAll" disabled> Seleccionar todas</label></div>
+    <div id="results" class="grid"><div class="empty">Las imágenes encontradas aparecerán aquí.</div></div>
+  </section>
+  <section class="panel hint warning">
+    <strong>Nota sobre compatibilidad:</strong> algunas redes sociales y páginas requieren iniciar sesión o ejecutan sus galerías con JavaScript. Esta versión inicial busca imágenes presentes en el HTML y metadatos públicos; no evita bloqueos ni protecciones de acceso.
+  </section>
+  <p class="small">ImageNinja MVP · Úsalo solo con imágenes que tengas derecho a guardar.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+let images=[], busy=false;
+const selected=new Set();
+function setStatus(s){$('status').textContent=s}
+function updateControls(){
+ const n=selected.size;
+ $('count').textContent=`· ${images.length} imágenes`;
+ $('allBtn').disabled=busy||!images.length;
+ $('selectedBtn').disabled=busy||!n;
+ $('clearBtn').disabled=busy||!n;
+ $('selectAll').disabled=busy||!images.length;
+ $('selectAll').checked=!!images.length&&n===images.length;
+}
+function safeLabel(s){return String(s||'Imagen encontrada').slice(0,180)}
+function render(){
+ const root=$('results'); root.replaceChildren();
+ if(!images.length){root.innerHTML='<div class="empty">No hay resultados todavía. Pega una URL y pulsa “Buscar imágenes”.</div>';updateControls();return}
+ images.forEach((im,i)=>{
+  const card=document.createElement('article');card.className='card';
+  const thumb=document.createElement('div');thumb.className='thumb';
+  const img=document.createElement('img');img.loading='lazy';img.alt=safeLabel(im.alt);img.src=im.url;
+  img.onerror=()=>{img.remove();thumb.textContent='Vista previa no disponible'};
+  thumb.append(img);
+  const meta=document.createElement('div');meta.className='meta';
+  const p=document.createElement('p');p.textContent=safeLabel(im.alt)+' · '+(im.source||new URL(im.url).hostname);
+  const lab=document.createElement('label');lab.className='selectrow';
+  const cb=document.createElement('input');cb.type='checkbox';cb.checked=selected.has(i);cb.addEventListener('change',()=>{cb.checked?selected.add(i):selected.delete(i);updateControls()});
+  const span=document.createElement('span');span.textContent='Seleccionar';
+  lab.append(cb,span);meta.append(p,lab);card.append(thumb,meta);root.append(card);
+ });
+ updateControls();
+}
+async function scan(){
+ const url=$('pageUrl').value.trim();if(!url){setStatus('Pega una URL válida para comenzar.');return}
+ try{new URL(url)}catch{setStatus('La dirección no parece válida. Incluye https:// o http://.');return}
+ busy=true;$('scanBtn').disabled=true;updateControls();setStatus('Analizando la página…');
+ try{
+  const r=await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+  const data=await r.json();if(!r.ok)throw new Error(data.detail||'No se pudo analizar la página.');
+  images=data.images||[];selected.clear();render();
+  setStatus(images.length?`Encontradas ${images.length} imágenes en ${data.page}${data.truncated?'\\nSe muestran solo las primeras imágenes detectadas.':''}`:'No se encontraron imágenes públicas en el HTML. La página podría requerir JavaScript o acceso.');
+ }catch(e){images=[];selected.clear();render();setStatus('Error: '+e.message+'\\nComprueba la URL y que el servidor pueda acceder a la página.')}
+ finally{busy=false;$('scanBtn').disabled=false;updateControls()}
+}
+async function download(which){
+ const indexes=which==='all'?images.map((_,i)=>i):[...selected];
+ if(!indexes.length)return;
+ busy=true;updateControls();setStatus(`Preparando ${indexes.length} archivo(s)…`);
+ try{
+  const urls=indexes.map(i=>images[i].url);
+  // Multiple files are returned as a ZIP; a single image is returned directly.
+  const r=await fetch('/api/download',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls})});
+  if(!r.ok){let msg='No se pudo descargar.';try{msg=(await r.json()).detail||msg}catch{}throw new Error(msg)}
+  const blob=await r.blob();const a=document.createElement('a');const obj=URL.createObjectURL(blob);a.href=obj;
+  const zip=blob.type.includes('zip')||indexes.length>1;
+  a.download=zip?'imageninja.zip':(images[indexes[0]].url.split('/').pop().split('?')[0]||'imagen.jpg');
+  document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(obj),30000);
+  setStatus(zip?'Descarga iniciada: imageninja.zip':'Descarga iniciada.');
+ }catch(e){setStatus('Error de descarga: '+e.message)}
+ finally{busy=false;updateControls()}
+}
+$('scanBtn').addEventListener('click',scan);
+$('pageUrl').addEventListener('keydown',e=>{if(e.key==='Enter')scan()});
+$('allBtn').addEventListener('click',()=>download('all'));
+$('selectedBtn').addEventListener('click',()=>download('selected'));
+$('clearBtn').addEventListener('click',()=>{selected.clear();render()});
+$('selectAll').addEventListener('change',e=>{selected.clear();if(e.target.checked)images.forEach((_,i)=>selected.add(i));render()});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+</script>
+</body>
+</html>
